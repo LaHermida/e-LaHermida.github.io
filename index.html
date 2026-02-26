@@ -561,8 +561,12 @@ function renderDash() {
     const cosechas = ciclos===1?[1]:[1,2,3];
     let totalCost=0, totalKilos=0;
     for(const cn of cosechas) for(let ti=0;ti<p.tablas.length;ti++) {
-      totalCost += calcTotalTabla(pi,cn,ti);
-      totalKilos += parseFloat(getTablaData(pi,cn,ti).kilos)||0;
+      const kilos = parseFloat(getTablaData(pi,cn,ti).kilos)||0;
+      // Solo suma costas que tienen kilos registrados
+      if(kilos > 0) {
+        totalCost += calcTotalTabla(pi,cn,ti);
+        totalKilos += kilos;
+      }
     }
     const cpk = totalKilos ? totalCost/totalKilos : null;
     return `<div class="stat c${pi+1}">
