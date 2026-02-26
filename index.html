@@ -394,6 +394,7 @@ const CULTIVOS = {
   maiz:  { label:'Maíz',  icon:'🌽', css:'cultivo-maiz',  pct:40 },
   trigo: { label:'Trigo', icon:'🌾', css:'cultivo-trigo', pct:20 },
   sorgo: { label:'Sorgo', icon:'🌿', css:'cultivo-sorgo', pct:40 },
+  higo:  { label:'Higo',  icon:'🍃', css:'cultivo-otro',  pct:40 },
   otro:  { label:'Otro',  icon:'🌱', css:'cultivo-otro',  pct:40 }
 };
 
@@ -580,11 +581,16 @@ function renderDash() {
       const cvIcons = [...cultivosSet].map(c=>CULTIVOS[c]?.icon||'🌱').join(' ');
       const colors = ['c1','c2','c3'];
       cards += `<div class="stat ${colors[pi%3]}" style="min-width:0">
-        <div class="stat-lbl">${p.emoji} ${p.nombre} · Cosecha ${cn} ${meta.closed?'🔒':''}</div>
-        <div class="stat-val" style="font-size:22px">${cpk!==null?'$'+cpk.toFixed(2):'—'}</div>
-        <div class="stat-unit">$/kg silo ${cvIcons}</div>
-        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:4px">
-          $/kg MS: <strong>${cpkms!==null?'$'+cpkms.toFixed(2):'—'}</strong> · ${meta.year}
+        <div class="stat-lbl">${p.emoji} ${p.nombre} · Cosecha ${cn} ${meta.closed?'🔒':''} · ${meta.year}</div>
+        <div style="display:flex;align-items:baseline;gap:12px;margin-top:6px;flex-wrap:wrap">
+          <div>
+            <div style="font-family:'DM Mono',monospace;font-size:9px;color:#2a7a2a;text-transform:uppercase;letter-spacing:1px">kg húmedo ${cvIcons}</div>
+            <div style="font-family:'Fraunces',serif;font-size:24px;font-weight:700;color:#2a7a2a;line-height:1">${cpk!==null?'$'+cpk.toFixed(2):'—'}</div>
+          </div>
+          <div>
+            <div style="font-family:'DM Mono',monospace;font-size:9px;color:#7a4a1a;text-transform:uppercase;letter-spacing:1px">kg seco (MS)</div>
+            <div style="font-family:'Fraunces',serif;font-size:24px;font-weight:700;color:#7a4a1a;line-height:1">${cpkms!==null?'$'+cpkms.toFixed(2):'—'}</div>
+          </div>
         </div>
       </div>`;
     });
@@ -606,16 +612,17 @@ function renderDash() {
         const cpk = calcCPK(pi,cn,ti);
         const cpkms = calcCPKMS(pi,cn,ti);
         if(kilos>0||cons>0) {
+          const haTabla = parseFloat(td.haSembradas)||p.tablas[ti].ha||0;
+          const total = calcTotalTabla(pi,cn,ti);
+          const gasHa = haTabla ? total/haTabla : null;
           rows += `<tr>
             <td>${p.emoji} ${p.nombre}</td>
             <td>C${cn}</td>
             <td>${p.tablas[ti].nombre}</td>
             <td>${cultivoBadge(td.cultivo||'maiz')}</td>
-            <td class="mono tr">${p.tablas[ti].ha} ha</td>
-            <td class="mono tr">${fmt(cons)}</td>
-            <td class="mono tr">${fmt(dep)}</td>
-            <td class="mono tr amber">${cpk!==null?'$'+cpk.toFixed(2):'—'}</td>
-            <td class="mono tr green">${cpkms!==null?'$'+cpkms.toFixed(2):'—'}</td>
+            <td class="mono tr">${haTabla} ha</td>
+            <td class="mono tr">${fmt(total)}</td>
+            <td class="mono tr amber">${gasHa!==null?'$'+gasHa.toFixed(2):'—'}</td>
           </tr>`;
         }
       }
@@ -624,7 +631,7 @@ function renderDash() {
   });
 
   det.innerHTML = html ? `<div class="tbl-wrap"><table>
-    <thead><tr><th>Predio</th><th>Cos.</th><th>Tabla</th><th>Cultivo</th><th>Ha</th><th>Consumos</th><th>Deprec.</th><th>$/kg silo</th><th>$/kg MS</th></tr></thead>
+    <thead><tr><th>Predio</th><th>Cos.</th><th>Tabla</th><th>Cultivo</th><th>Ha sembradas</th><th>Gasto total</th><th>$/ha</th></tr></thead>
     <tbody>${html}</tbody>
   </table></div>` : `<div class="empty"><div class="empty-icon">🌱</div><div>Sin datos registrados aún</div></div>`;
 }
