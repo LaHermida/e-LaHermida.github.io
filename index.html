@@ -213,7 +213,7 @@ tr:hover td { background:var(--cream); }
   <section id="sec-dashboard" class="page active">
     <div class="pg-title">Dashboard General</div>
     <div class="pg-sub">// Resumen en tiempo real · Los 3 predios</div>
-    <div class="stats-row" id="dash-stats"></div>
+    <div class="stats-row" id="dash-stats" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))"></div>
     <div class="card">
       <div class="card-head">🗺️ Resumen por predio y tabla</div>
       <div id="dash-detail"></div>
@@ -555,26 +555,41 @@ function render(sec) {
 // ══════════════════════════════════════════════
 function renderDash() {
   const stats = document.getElementById('dash-stats');
-  stats.innerHTML = S.predios.map((p,pi)=>{
-    const totalHa = p.tablas.reduce((s,t)=>s+t.ha,0);
+  // Un cuadrito por predio x cosecha
+  let cards = '';
+  S.predios.forEach((p,pi)=>{
     const ciclos = p.ciclos||3;
     const cosechas = ciclos===1?[1]:[1,2,3];
-    let totalCost=0, totalKilos=0;
-    for(const cn of cosechas) for(let ti=0;ti<p.tablas.length;ti++) {
-      const kilos = parseFloat(getTablaData(pi,cn,ti).kilos)||0;
-      // Solo suma costas que tienen kilos registrados
-      if(kilos > 0) {
-        totalCost += calcTotalTabla(pi,cn,ti);
-        totalKilos += kilos;
+    cosechas.forEach(cn=>{
+      const meta = getCosechaMeta(pi,cn);
+      let totalCost=0, totalKilos=0, totalKgMS=0;
+      // Cultivos presentes en esta cosecha
+      const cultivosSet = new Set();
+      for(let ti=0;ti<p.tablas.length;ti++) {
+        const td = getTablaData(pi,cn,ti);
+        const kilos = parseFloat(td.kilos)||0;
+        if(kilos>0) {
+          totalCost += calcTotalTabla(pi,cn,ti);
+          totalKilos += kilos;
+          totalKgMS += kilos*((parseFloat(td.pctMS)||0)/100);
+          cultivosSet.add(td.cultivo||'maiz');
+        }
       }
-    }
-    const cpk = totalKilos ? totalCost/totalKilos : null;
-    return `<div class="stat c${pi+1}">
-      <div class="stat-lbl">${p.emoji} ${p.nombre}</div>
-      <div class="stat-val">${cpk!==null?'$'+cpk.toFixed(2):'—'}</div>
-      <div class="stat-unit">$/kg promedio · ${totalHa.toFixed(1)} ha · ${p.tablas.length} tablas</div>
-    </div>`;
-  }).join('');
+      const cpk = totalKilos ? totalCost/totalKilos : null;
+      const cpkms = totalKgMS ? totalCost/totalKgMS : null;
+      const cvIcons = [...cultivosSet].map(c=>CULTIVOS[c]?.icon||'🌱').join(' ');
+      const colors = ['c1','c2','c3'];
+      cards += `<div class="stat ${colors[pi%3]}" style="min-width:0">
+        <div class="stat-lbl">${p.emoji} ${p.nombre} · Cosecha ${cn} ${meta.closed?'🔒':''}</div>
+        <div class="stat-val" style="font-size:22px">${cpk!==null?'$'+cpk.toFixed(2):'—'}</div>
+        <div class="stat-unit">$/kg silo ${cvIcons}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-top:4px">
+          $/kg MS: <strong>${cpkms!==null?'$'+cpkms.toFixed(2):'—'}</strong> · ${meta.year}
+        </div>
+      </div>`;
+    });
+  });
+  stats.innerHTML = cards;
 
   const det = document.getElementById('dash-detail');
   let html = '';
@@ -1132,7 +1147,7 @@ function renderMon() {
     html += `<div class="card">
       <div class="card-head">🌾 Cosecha ${cn} · ${monMeta.year}
         <div style="display:flex;align-items:center;gap:12px">
-          ${monMeta.closed?'<span style="font-family:\'DM Mono\',monospace;font-size:10px;background:#7a1f1f;color:white;padding:3px 8px">🔒 CERRADA ${monMeta.closedDate}</span>':'<span style="font-family:\'DM Mono\',monospace;font-size:10px;background:#e8f5e8;color:var(--green);padding:3px 8px">🟢 ABIERTA</span>'}
+          ${monMeta.closed?'<span style="font-family:\'DM Mono\',monospace;font-size:10px;background:#7a1f1f;color:white;padding:3px 8px">🔒 CERRADA ${monMeta.closedDate}</span>':'<span style="font-family:\'DM Mono\',monospace;font-size:10px;background:#e8f5e8;color:var(--green);padding:3px 8px">✓ Abierta</span>'}
           <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">${totKilos?fmtN(totKilos,0)+' kg totales':''}</span>
         </div>
       </div>
@@ -1174,13 +1189,13 @@ function renderRep() {
   document.getElementById('rep-ctabs').innerHTML = [
     ...cosechas.map(c=>{
       const m=getCosechaMeta(pi,c);
-      const tag=m.closed?'🔒':'🟢';
-      return `<button class="ctab ${c===curCosechaRep&&curTablaRep===-1?'active':''}" onclick="curCosechaRep=${c};curTablaRep=-1;renderRepContent()">${tag} C${c} ${m.year} (Predio)</button>`;
+      const tag=m.closed?'🔒 ':'✓ ';
+      return `<button class="ctab ${c===curCosechaRep&&curTablaRep===-1?'active':''}" onclick="curCosechaRep=${c};curTablaRep=-1;renderRepContent()">${tag}C${c} ${m.year} (Predio)</button>`;
     }),
     ...cosechas.map(c=>{
       const m=getCosechaMeta(pi,c);
-      const tag=m.closed?'🔒':'🟢';
-      return `<button class="ctab ${c===curCosechaRep&&curTablaRep>=0?'active':''}" onclick="curCosechaRep=${c};curTablaRep=0;renderRepContent()">${tag} C${c} ${m.year} (x Tabla)</button>`;
+      const tag=m.closed?'🔒 ':'✓ ';
+      return `<button class="ctab ${c===curCosechaRep&&curTablaRep>=0?'active':''}" onclick="curCosechaRep=${c};curTablaRep=0;renderRepContent()">${tag}C${c} ${m.year} (x Tabla)</button>`;
     })
   ].join('');
 
@@ -1236,7 +1251,7 @@ function renderRepContent() {
         </div>
         <div style="text-align:center;padding:14px;background:var(--soil);color:var(--straw);margin-bottom:14px">
           <div style="font-family:'Fraunces',serif;font-size:18px;font-weight:700">GASTOS TOTALES — ${p.nombre}</div>
-          <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--amber);margin-top:4px">Cosecha ${cn} · Año ${getCosechaMeta(pi,cn).year} · ${p.tablas.length} tablas · ${fmtN(totalHa,2)} ha ${getCosechaMeta(pi,cn).closed?'· 🔒 CERRADA':'· 🟢 ABIERTA'}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--amber);margin-top:4px">Cosecha ${cn} · Año ${getCosechaMeta(pi,cn).year} · ${p.tablas.length} tablas · ${fmtN(totalHa,2)} ha ${getCosechaMeta(pi,cn).closed?'· 🔒 CERRADA':'· ✓ Abierta'}</div>
         </div>
         <div class="tbl-wrap"><table>
           <thead><tr><th>Categoría</th><th>Tipo</th><th>$/Ha</th><th>Gasto Total</th></tr></thead>
