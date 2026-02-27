@@ -1669,34 +1669,6 @@ function toast(msg,warn=false) {
 
 // INIT
 curTablaRep=-1;
-
-// Show loading state then load from cloud
-document.querySelector('.content').innerHTML = `
-  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px">
-    <div style="font-family:'Fraunces',serif;font-size:28px;font-weight:700;color:var(--soil)">Cargando datos...</div>
-    <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">Conectando con la nube ☁️</div>
-  </div>`;
-
-// Restore content structure then load
-document.querySelector('.content').innerHTML = `
-  <section id="sec-dashboard" class="page active">
-    <div class="pg-title">Dashboard General</div>
-    <div class="pg-sub">// Resumen en tiempo real · Los 3 predios</div>
-    <div class="stats-row" id="dash-stats" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))"></div>
-    <div class="card">
-      <div class="card-head">🗺️ Resumen por predio y tabla</div>
-      <div id="dash-detail"></div>
-    </div>
-  </section>
-  <section id="sec-tablas" class="page"><div class="pg-title">Configuración de Tablas</div><div class="pg-sub">// Hectáreas y cultivo por tabla</div><div class="ptabs" id="tab-ptabs"></div><div id="tab-content"></div></section>
-  <section id="sec-articulos" class="page"><div class="pg-title">Catálogo de Artículos</div><div class="pg-sub">// Precios con historial</div><div class="card"><div class="card-head">➕ Nuevo artículo / Actualizar precio</div><div class="fg4"><div class="field"><label>Nombre</label><input type="text" id="art-nombre" placeholder="Ej: Semilla, Diesel..."/></div><div class="field"><label>Categoría</label><select id="art-cat"><option>Material de cultivo</option><option>Maquinaria</option><option>Reparaciones Riego</option><option>Luz</option><option>Ensilada</option><option>Materiales de ensilada</option><option>Nómina y gastos admin</option><option>Diesel</option><option>Sirre y Desmonte</option><option>Otro</option></select></div><div class="field"><label>Precio actual</label><input type="number" id="art-precio" placeholder="0.00"/></div><div class="field"><label>Unidad</label><input type="text" id="art-unidad" placeholder="kg, L, hr..."/></div></div><div class="btn-row"><button class="btn btn-p" onclick="addArticulo()">Guardar artículo</button></div></div><div class="card"><div class="card-head">📦 Artículos registrados</div><div id="art-list"></div></div></section>
-  <section id="sec-depreciaciones" class="page"><div class="pg-title">Depreciaciones</div><div class="pg-sub">// General · Por tabla(s) específicas</div><div class="ptabs" id="dep-ptabs"></div><div id="dep-content"></div></section>
-  <section id="sec-gastos" class="page"><div class="pg-title">Gastos Generales</div><div class="pg-sub">// Diesel, Luz, Nómina — se prorratean por ha</div><div id="gastos-content"></div></section>
-  <section id="sec-registro" class="page"><div class="pg-title">Registro de Consumos</div><div class="pg-sub">// Por tabla</div><div class="ptabs" id="reg-ptabs"></div><div class="ctabs" id="reg-ctabs"></div><div id="reg-content"></div></section>
-  <section id="sec-monitor" class="page"><div class="pg-title">Monitor en Tiempo Real</div><div class="pg-sub">// Acumulado por predio y tabla</div><div class="ptabs" id="mon-ptabs"></div><div id="mon-content"></div></section>
-  <section id="sec-reportes" class="page"><div class="pg-title">Reportes y Exportación PDF</div><div class="pg-sub">// Por tabla o predio completo</div><div class="ptabs" id="rep-ptabs"></div><div class="ctabs" id="rep-ctabs"></div><div id="rep-content"></div></section>
-`;
-
 loadState();
 </script>
 </body>
