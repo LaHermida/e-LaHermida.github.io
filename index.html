@@ -409,20 +409,16 @@ async function loadState() {
   renderDash();
 }
 
-function save() {
-  if(_saveTimeout) clearTimeout(_saveTimeout);
-  _saveTimeout = setTimeout(async ()=>{
-    try {
-      await sbSet(SK, JSON.stringify(S));
-      // Visual confirmation
-      const ind = document.getElementById('save-indicator');
-      if(ind) { ind.textContent = '☁️ Guardado'; ind.style.color = '#2a7a2a'; setTimeout(()=>{ ind.textContent = '☁️ Nube'; ind.style.color = '#806040'; }, 2000); }
-    } catch(e){
-      const ind = document.getElementById('save-indicator');
-      if(ind) { ind.textContent = '❌ Error al guardar: '+e.message; ind.style.color = '#7a1f1f'; }
-      alert('Error al guardar: ' + e.message);
-    }
-  }, 600);
+async function save() {
+  try {
+    await sbSet(SK, JSON.stringify(S));
+    const ind = document.getElementById('save-indicator');
+    if(ind) { ind.textContent = '☁️ Guardado'; ind.style.color = '#2a7a2a'; setTimeout(()=>{ ind.textContent = '☁️ Nube'; ind.style.color = '#806040'; }, 2000); }
+  } catch(e){
+    const ind = document.getElementById('save-indicator');
+    if(ind) { ind.textContent = '❌ ' + e.message; ind.style.color = '#7a1f1f'; }
+    alert('Error al guardar: ' + e.message);
+  }
 }
 function uid() { return Math.random().toString(36).slice(2,9); }
 function today() { return new Date().toLocaleDateString('es-CL'); }
