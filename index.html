@@ -172,6 +172,7 @@ tr:hover td { background:var(--cream); }
   <div>
     <span class="logo">Silo<em>Costo</em></span>
     <span class="logo-tag">PRO · GRUPO 2</span>
+  <span id="save-indicator" style="font-family:'DM Mono',monospace;font-size:10px;color:#806040;margin-left:14px">☁️ Nube</span>
   </div>
   <nav class="header-nav">
     <button class="hnav active" onclick="goSec('dashboard')">Dashboard</button>
@@ -411,7 +412,16 @@ async function loadState() {
 function save() {
   if(_saveTimeout) clearTimeout(_saveTimeout);
   _saveTimeout = setTimeout(async ()=>{
-    try { await sbSet(SK, JSON.stringify(S)); } catch(e){ console.error('Save error',e); }
+    try {
+      await sbSet(SK, JSON.stringify(S));
+      // Visual confirmation
+      const ind = document.getElementById('save-indicator');
+      if(ind) { ind.textContent = '☁️ Guardado'; ind.style.color = '#2a7a2a'; setTimeout(()=>{ ind.textContent = '☁️ Nube'; ind.style.color = '#806040'; }, 2000); }
+    } catch(e){
+      const ind = document.getElementById('save-indicator');
+      if(ind) { ind.textContent = '❌ Error al guardar: '+e.message; ind.style.color = '#7a1f1f'; }
+      alert('Error al guardar: ' + e.message);
+    }
   }, 600);
 }
 function uid() { return Math.random().toString(36).slice(2,9); }
