@@ -157,6 +157,14 @@ tr:hover td { background:var(--cream); }
 .toast { position:fixed; bottom:24px; right:24px; background:var(--green); color:white; padding:11px 18px; font-size:13px; font-weight:600; z-index:999; box-shadow:0 4px 20px rgba(0,0,0,0.2); animation:slideIn 0.3s ease; }
 @keyframes slideIn { from{transform:translateX(80px);opacity:0} to{transform:translateX(0);opacity:1} }
 
+/* LOGIN */
+.login-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:var(--soil); z-index:9999; display:flex; align-items:center; justify-content:center; }
+.login-box { background:var(--cream); padding:48px; width:360px; text-align:center; }
+.login-title { font-family:'Fraunces',serif; font-size:32px; font-weight:900; color:var(--soil); margin-bottom:6px; }
+.login-sub { font-family:'DM Mono',monospace; font-size:11px; color:var(--muted); margin-bottom:32px; }
+.login-field { display:flex; flex-direction:column; gap:6px; margin-bottom:16px; text-align:left; }
+.login-error { background:#fde8e8; color:#7a1f1f; padding:10px; font-size:13px; font-weight:600; margin-bottom:16px; display:none; }
+
 /* PDF */
 .pdf-btn { background:var(--red); color:white; padding:8px 18px; border:none; cursor:pointer; font-family:'Epilogue',sans-serif; font-weight:700; font-size:12px; transition:opacity 0.15s; }
 .pdf-btn:hover { opacity:0.85; }
@@ -173,6 +181,7 @@ tr:hover td { background:var(--cream); }
     <span class="logo">Silo<em>Costo</em></span>
     <span class="logo-tag">PRO · GRUPO 2</span>
   <span id="save-indicator" style="font-family:'DM Mono',monospace;font-size:10px;color:#806040;margin-left:14px">☁️ Nube</span>
+  <span id="user-tag" style="font-family:'DM Mono',monospace;font-size:10px;color:var(--straw);margin-left:14px"></span>
   </div>
   <nav class="header-nav">
     <button class="hnav active" onclick="goSec('dashboard')">Dashboard</button>
@@ -180,6 +189,7 @@ tr:hover td { background:var(--cream); }
     <button class="hnav" onclick="goSec('articulos')">Artículos</button>
     <button class="hnav" onclick="goSec('depreciaciones')">Depreciaciones</button>
     <button class="hnav" onclick="goSec('gastos')">Gastos</button>
+    <button class="hnav" onclick="goSec('grid')">Grid Cultivo</button>
     <button class="hnav" onclick="goSec('registro')">Registro</button>
     <button class="hnav" onclick="goSec('monitor')">Monitor</button>
     <button class="hnav" onclick="goSec('reportes')">Reportes</button>
@@ -203,6 +213,7 @@ tr:hover td { background:var(--cream); }
   <div class="sb-item" onclick="goSec('articulos')"><span class="sb-icon">📦</span>Artículos</div>
   <div class="sb-item" onclick="goSec('depreciaciones')"><span class="sb-icon">⚙️</span>Depreciaciones</div>
   <div class="sb-item" onclick="goSec('gastos')"><span class="sb-icon">💰</span>Gastos Gral.</div>
+  <div class="sb-item" onclick="goSec('grid')"><span class="sb-icon">🌱</span>Grid Cultivo</div>
   <div class="sb-item" onclick="goSec('registro')"><span class="sb-icon">✏️</span>Registro</div>
   <div class="sb-item" onclick="goSec('monitor')"><span class="sb-icon">📡</span>Monitor</div>
   <div class="sb-item" onclick="goSec('reportes')"><span class="sb-icon">📄</span>PDF</div>
@@ -289,6 +300,15 @@ tr:hover td { background:var(--cream); }
     <div id="gastos-content"></div>
   </section>
 
+  <!-- GRID MATERIAL CULTIVO -->
+  <section id="sec-grid" class="page">
+    <div class="pg-title">Grid — Material de Cultivo</div>
+    <div class="pg-sub">// Registra cantidades por artículo × tabla en una sola vista</div>
+    <div class="ptabs" id="grid-ptabs"></div>
+    <div class="ctabs" id="grid-ctabs"></div>
+    <div id="grid-content"></div>
+  </section>
+
   <!-- REGISTRO -->
   <section id="sec-registro" class="page">
     <div class="pg-title">Registro de Consumos</div>
@@ -319,10 +339,69 @@ tr:hover td { background:var(--cream); }
 </div>
 </div>
 
+<!-- LOGIN OVERLAY -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <div class="login-title">Silo<span style="color:var(--gold)">Costo</span></div>
+    <div class="login-sub">PRO · GRUPO 2 · La Hermida</div>
+    <div class="login-error" id="login-error">Usuario o contraseña incorrectos</div>
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="usuario@LaHermida" autocomplete="username"/>
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <button class="btn btn-p" style="width:100%;margin-top:8px;padding:12px" onclick="doLogin()">Entrar</button>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
+// ── AUTH ──
+const USERS = {
+  'Ale@LaHermida': { pass:'1234', rol:'admin' },
+  'Naty@LaHermida': { pass:'1234', rol:'colaborador' }
+};
+let currentUser = null;
+
+function doLogin() {
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  const u = USERS[user];
+  if(u && u.pass === pass) {
+    currentUser = { nombre: user, rol: u.rol };
+    document.getElementById('login-overlay').style.display = 'none';
+    // Show/hide nav items based on role
+    applyRoleUI();
+    toast(`✓ Bienvenido ${user.split('@')[0]}`);
+  } else {
+    document.getElementById('login-error').style.display = 'block';
+  }
+}
+
+function applyRoleUI() {
+  const isAdmin = currentUser?.rol === 'admin';
+  // Hide nav items for colaborador
+  const navItems = ['tablas','articulos','depreciaciones','gastos','monitor','reportes'];
+  document.querySelectorAll('.hnav').forEach(btn => {
+    const txt = btn.textContent.toLowerCase();
+    const isRestricted = navItems.some(n => txt.includes(n.slice(0,4)));
+    if(!isAdmin && isRestricted) btn.style.display = 'none';
+  });
+  document.querySelectorAll('.sb-item').forEach(item => {
+    const txt = item.textContent.toLowerCase();
+    const isRestricted = navItems.some(n => txt.includes(n.slice(0,4)));
+    if(!isAdmin && isRestricted) item.style.display = 'none';
+  });
+  // Show user indicator in header
+  const tag = document.getElementById('user-tag');
+  if(tag) tag.textContent = (isAdmin ? '👑' : '👤') + ' ' + currentUser.nombre.split('@')[0];
+}
+
 const SK = 'silocosto_g2_v1';
 let _saveTimeout = null;
 const SB_URL = 'https://qlgctjnrndzhvqondjvz.supabase.co';
@@ -588,6 +667,7 @@ function render(sec) {
   if(sec==='articulos') renderArticulos();
   if(sec==='depreciaciones') renderDep();
   if(sec==='gastos') renderGastos();
+  if(sec==='grid') renderGrid();
   if(sec==='registro') renderReg();
   if(sec==='monitor') renderMon();
   if(sec==='reportes') renderRep();
@@ -1663,6 +1743,113 @@ function addGasto() {
 function delGasto(i) {
   S.gastosGenerales.splice(i,1);
   save(); renderGastos(); toast('✓ Eliminado');
+}
+
+// ══════════════════════════════════════════════
+// GRID MATERIAL DE CULTIVO
+// ══════════════════════════════════════════════
+let curPredioGrid=0, curCosechaGrid=1;
+let gridDraft = {}; // {tablaIdx: {articuloId: cantidad}}
+
+function renderGrid() {
+  document.getElementById('grid-ptabs').innerHTML = S.predios.map((p,i)=>
+    `<button class="ptab ${i===curPredioGrid?'active':''}" onclick="curPredioGrid=${i};curCosechaGrid=1;gridDraft={};renderGrid()">${p.emoji} ${p.nombre}</button>`
+  ).join('');
+
+  const pi = curPredioGrid;
+  const p = S.predios[pi];
+  const ciclos = p.ciclos||3;
+  const cosechas = ciclos===1?[1]:[1,2,3];
+  if(!cosechas.includes(curCosechaGrid)) curCosechaGrid=1;
+
+  document.getElementById('grid-ctabs').innerHTML = cosechas.map(c=>
+    `<button class="ctab ${c===curCosechaGrid?'active':''}" onclick="curCosechaGrid=${c};gridDraft={};renderGridContent()">Cosecha ${c}</button>`
+  ).join('');
+
+  renderGridContent();
+}
+
+function renderGridContent() {
+  const pi = curPredioGrid, cn = curCosechaGrid;
+  const p = S.predios[pi];
+  const artsCultivo = S.articulos.filter(a=>a.categoria==='Material de cultivo');
+
+  if(!artsCultivo.length) {
+    document.getElementById('grid-content').innerHTML = `<div class="card"><div class="empty"><div class="empty-icon">🌱</div><div>No hay artículos de "Material de cultivo" en el catálogo.<br>El admin debe agregarlos primero.</div></div></div>`;
+    return;
+  }
+
+  // Build grid headers (tablas)
+  const tablaHeaders = p.tablas.map((t,ti)=>`<th style="text-align:center;min-width:90px">${t.nombre}<br><span style="font-weight:400;font-size:9px">${t.ha} ha</span></th>`).join('');
+
+  // Build grid rows (articulos)
+  const rows = artsCultivo.map(art=>{
+    const precio = getCurrentPrice(art.id);
+    const cells = p.tablas.map((t,ti)=>{
+      const draftVal = gridDraft[ti]?.[art.id] || '';
+      return `<td style="padding:4px"><input type="number" min="0" step="0.01" placeholder="—"
+        value="${draftVal}"
+        style="width:80px;padding:5px;text-align:center;border:1px solid var(--border);font-family:'DM Mono',monospace;font-size:12px"
+        onchange="updateGridDraft(${ti},'${art.id}',this.value)"
+        /></td>`;
+    }).join('');
+    return `<tr>
+      <td style="white-space:nowrap"><strong>${art.nombre}</strong><br>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">${fmt(precio)}/${art.unidad}</span>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  document.getElementById('grid-content').innerHTML = `
+    <div class="card">
+      <div class="card-head">🌱 ${p.nombre} · Cosecha ${cn} · Material de cultivo</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr>
+            <th style="text-align:left;min-width:160px">Artículo</th>
+            ${tablaHeaders}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn btn-p" onclick="capturarGrid()">✅ Capturar todo</button>
+        <button class="btn btn-s" onclick="gridDraft={};renderGridContent()">Limpiar</button>
+        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">Solo llena las celdas que aplican — las vacías se ignoran</span>
+      </div>
+    </div>`;
+}
+
+function updateGridDraft(ti, artId, val) {
+  if(!gridDraft[ti]) gridDraft[ti] = {};
+  gridDraft[ti][artId] = val;
+}
+
+function capturarGrid() {
+  const pi = curPredioGrid, cn = curCosechaGrid;
+  let total = 0;
+  for(const [tiStr, arts] of Object.entries(gridDraft)) {
+    const ti = parseInt(tiStr);
+    for(const [artId, cantStr] of Object.entries(arts)) {
+      const cant = parseFloat(cantStr);
+      if(!cant || cant <= 0) continue;
+      const art = S.articulos.find(a=>a.id===artId);
+      if(!art) continue;
+      const precio = getCurrentPrice(artId);
+      const td = getTablaData(pi, cn, ti);
+      td.consumos.push({
+        articuloId:artId, nombre:art.nombre, categoria:art.categoria,
+        unidad:art.unidad, cantidad:cant, precioSnapshot:precio, fecha:today()
+      });
+      total++;
+    }
+  }
+  if(!total) { toast('⚠️ No hay cantidades para capturar',true); return; }
+  gridDraft = {};
+  save();
+  renderGridContent();
+  toast(`✅ ${total} registro(s) capturados`);
 }
 
 // TOAST
