@@ -375,7 +375,7 @@ function doLogin() {
 function applyRoleUI() {
   const isAdmin = currentUser?.rol === 'admin';
   // Hide nav items for colaborador
-  const restrictedSections = ['tablas','articulos','depreciaciones','gastos','monitor','reportes'];
+  const restrictedSections = ['tablas','articulos','depreciaciones','monitor','reportes']; // Naty puede ver gastos y registro
   document.querySelectorAll('.hnav').forEach(btn => {
     const txt = btn.textContent.toLowerCase().trim();
     const restricted = restrictedSections.some(n => txt.startsWith(n.slice(0,4)));
@@ -458,7 +458,9 @@ function defaultState() {
       { 1:{}, 2:{}, 3:{} }
     ],
     // gastosGenerales = [{id, mes, anio, categoria, monto, prediosIdx:[0,1,2], fecha}]
-    gastosGenerales: []
+    gastosGenerales: [],
+    // equipos = {pi: [{id, nombre, tipo:'tractor'|'noria'|'luz'}]}
+    equipos: {}
   };
 }
 
@@ -1682,10 +1684,29 @@ function printReporteTabla(pi, cn, ti) {
 // GASTOS GENERALES
 // ══════════════════════════════════════════════
 
+// Categorías simples (monto directo)
+const CATS_SIMPLES = [
+  'Reparaciones Riego','Sirre y Desmonte','Otro'
+];
+
+// Actividades para Maquinaria, Nómina, Camiones
+const ACTIVIDADES = ['Labor','Ensilada','Sistema de riego'];
+
+// Mantenemos CATS_GENERALES para compatibilidad con datos anteriores
 const CATS_GENERALES = [
   'Diesel','Luz','Nómina y gastos admin','Maquinaria',
   'Reparaciones Riego','Ensilada','Materiales de ensilada',
-  'Sirre y Desmonte','Otro'
+  'Sirre y Desmonte','Otro','Camiones'
+];
+
+// Tabs del grid de gastos
+const GASTOS_TABS = [
+  { id:'equipos',  label:'🚜 Diesel / Reparaciones', rol:'colaborador' },
+  { id:'luz',      label:'💡 Luz',                   rol:'colaborador' },
+  { id:'ensilada', label:'🌽 Ensilada',               rol:'admin' },
+  { id:'nomina',   label:'👷 Nómina',                 rol:'admin' },
+  { id:'camiones', label:'🚛 Camiones',               rol:'admin' },
+  { id:'otros',    label:'📦 Otros',                  rol:'admin' },
 ];
 
 // Keep for backward compat with old data that had mes field
@@ -1742,50 +1763,205 @@ function calcGastosGeneralesTabla(pi, cn, ti) {
     .reduce((s,g) => s + getGastoParaTabla(g, pi, ti), 0);
 }
 
-let gastosGridDraft = {}; // {catIdx: {cn: monto}}
+let gastosGridDraft = {};
 let gastosGridPrediosIdx = [];
 let gastosGridCn = 1;
+let gastosTab = 'equipos';
 
 function renderGastos() {
   if(!S.gastosGenerales) S.gastosGenerales = [];
+  if(!S.equipos) S.equipos = {}; // {pi: [{id, nombre, tipo}]} tipo: tractor|noria|luz
   const curYear = new Date().getFullYear();
+  const isAdmin = currentUser?.rol === 'admin';
 
   // Summary by cosecha
   const resumen = {1:0, 2:0, 3:0};
-  S.gastosGenerales.forEach(g => {
-    resumen[getGastoCosecha(g)] += parseFloat(g.monto)||0;
-  });
+  S.gastosGenerales.forEach(g => { resumen[getGastoCosecha(g)] += parseFloat(g.monto)||0; });
 
-  // Predios checkboxes
+  // Filter tabs by role
+  const visibleTabs = GASTOS_TABS.filter(t => isAdmin || t.rol === 'colaborador');
+
+  // Header selectors
   const predioChecks = S.predios.map((p,i)=>`
     <label class="check-row">
       <input type="checkbox" class="gasto-predio-check" value="${i}" ${gastosGridPrediosIdx.includes(i)||gastosGridPrediosIdx.length===0?'checked':''}/>
       ${p.emoji} ${p.nombre}
     </label>`).join('');
 
-  // Grid: categorias × monto (una sola columna — cosecha seleccionada)
-  const selectedCn = gastosGridCn || 1;
-
-  const gridRows = CATS_GENERALES.map((cat,ci)=>{
-    const val = gastosGridDraft[ci]?.[selectedCn] || '';
-    return `<tr>
-      <td style="padding:10px 14px;white-space:nowrap"><strong>${cat}</strong></td>
-      <td style="padding:6px"><input type="number" min="0" step="1" placeholder="—"
-        value="${val}"
-        style="width:160px;padding:6px 10px;text-align:right;border:1px solid #d4c0a0;font-size:14px"
-        onchange="updateGastosDraft(${ci},${selectedCn},this.value)"
-        /></td>
-    </tr>`;
+  const cosechaOpts = [1,2,3].map(cn => {
+    const anyOpen = S.predios.some((p,pi)=>!getCosechaMeta(pi,cn).closed);
+    const label = cn===1?'C1 · Triticale · Dic-Feb':cn===2?'C2 · Maíz · Mar-Jul':'C3 · Maíz/Sorgo · Ago-Nov';
+    return `<option value="${cn}" ${gastosGridCn===cn?'selected':''} ${!anyOpen?'disabled':''}>${label}${!anyOpen?' 🔒':''}</option>`;
   }).join('');
 
-  // Existing records table
+  // Tabs HTML
+  const tabsHtml = visibleTabs.map(t=>
+    `<button class="ctab ${gastosTab===t.id?'active':''}" onclick="gastosTab='${t.id}';gastosGridDraft={};renderGastos()">${t.label}</button>`
+  ).join('');
+
+  // ── Build tab content ──
+  let tabContent = '';
+  const selectedCn = gastosGridCn || 1;
+
+  if(gastosTab === 'equipos') {
+    // Equipos: tractores y norias configurados por predio
+    // Get selected predios
+    const selPredios = gastosGridPrediosIdx.length ? gastosGridPrediosIdx : S.predios.map((_,i)=>i);
+    // Equipo config per predio
+    const equipoRows = selPredios.map(pi => {
+      const p = S.predios[pi];
+      const equips = (S.equipos[pi] || []).filter(e => e.tipo==='tractor'||e.tipo==='noria');
+      if(!equips.length) return `<tr><td colspan="3" style="padding:10px 14px;color:var(--muted);font-size:12px">${p.emoji} ${p.nombre} — sin equipos. Admin debe configurarlos.</td></tr>`;
+      return equips.map(eq => {
+        const dDiesel = gastosGridDraft[`d_${pi}_${eq.id}`] || '';
+        const dRep    = gastosGridDraft[`r_${pi}_${eq.id}`] || '';
+        return `<tr>
+          <td style="padding:8px 14px;white-space:nowrap">${p.emoji} <strong>${eq.nombre}</strong> <span style="font-size:10px;color:var(--muted)">(${p.nombre})</span></td>
+          <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${dDiesel}"
+            style="width:140px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+            onchange="gastosGridDraft['d_${pi}_${eq.id}']=this.value"/></td>
+          <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${dRep}"
+            style="width:140px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+            onchange="gastosGridDraft['r_${pi}_${eq.id}']=this.value"/></td>
+        </tr>`;
+      }).join('');
+    }).join('');
+
+    // Admin: config equipos
+    const configEq = isAdmin ? `
+      <div style="margin-top:12px;padding:12px;background:var(--cream);border:1px solid var(--border)">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">⚙️ Configurar equipos del predio</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="eq-predio" style="padding:5px">${S.predios.map((p,i)=>`<option value="${i}">${p.emoji} ${p.nombre}</option>`).join('')}</select>
+          <input type="text" id="eq-nombre" placeholder="Ej: Tractor 3, Noria 1..." style="padding:5px;width:160px"/>
+          <select id="eq-tipo" style="padding:5px"><option value="tractor">Tractor</option><option value="noria">Noria</option></select>
+          <button class="btn btn-s" style="padding:5px 12px" onclick="addEquipo()">+ Agregar</button>
+        </div>
+        <div id="eq-list" style="margin-top:8px">${renderEquiposList()}</div>
+      </div>` : '';
+
+    tabContent = `
+      ${configEq}
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">
+        <thead><tr>
+          <th style="text-align:left;min-width:200px">Equipo</th>
+          <th style="text-align:right;min-width:150px">Diesel ($)</th>
+          <th style="text-align:right;min-width:150px">Reparación ($)</th>
+        </tr></thead>
+        <tbody>${equipoRows}</tbody>
+      </table>`;
+
+  } else if(gastosTab === 'luz') {
+    // Luz: puntos de luz por predio
+    const selPredios = gastosGridPrediosIdx.length ? gastosGridPrediosIdx : S.predios.map((_,i)=>i);
+    const luzRows = selPredios.map(pi => {
+      const p = S.predios[pi];
+      const puntos = (S.equipos[pi] || []).filter(e => e.tipo==='luz');
+      if(!puntos.length) return `<tr><td colspan="2" style="padding:10px 14px;color:var(--muted);font-size:12px">${p.emoji} ${p.nombre} — sin puntos de luz configurados.</td></tr>`;
+      return puntos.map(pt => {
+        const val = gastosGridDraft[`luz_${pi}_${pt.id}`] || '';
+        return `<tr>
+          <td style="padding:8px 14px;white-space:nowrap">${p.emoji} <strong>${pt.nombre}</strong></td>
+          <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${val}"
+            style="width:160px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+            onchange="gastosGridDraft['luz_${pi}_${pt.id}']=this.value"/></td>
+        </tr>`;
+      }).join('');
+    }).join('');
+
+    const configLuz = isAdmin ? `
+      <div style="margin-top:12px;padding:12px;background:var(--cream);border:1px solid var(--border)">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">⚙️ Configurar puntos de luz</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="eq-predio-luz" style="padding:5px">${S.predios.map((p,i)=>`<option value="${i}">${p.emoji} ${p.nombre}</option>`).join('')}</select>
+          <input type="text" id="eq-nombre-luz" placeholder="Ej: Cerro 212, Rebombeo..." style="padding:5px;width:180px"/>
+          <button class="btn btn-s" style="padding:5px 12px" onclick="addEquipoLuz()">+ Agregar</button>
+        </div>
+      </div>` : '';
+
+    tabContent = `
+      ${configLuz}
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">
+        <thead><tr>
+          <th style="text-align:left;min-width:200px">Punto de luz</th>
+          <th style="text-align:right;min-width:160px">Monto ($)</th>
+        </tr></thead>
+        <tbody>${luzRows}</tbody>
+      </table>`;
+
+  } else if(gastosTab === 'ensilada') {
+    const val = gastosGridDraft['ensilada'] || '';
+    tabContent = `
+      <div style="padding:16px 0;max-width:400px">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Monto total pagado por maquila de ensilada esta cosecha.</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr><th style="text-align:left">Concepto</th><th style="text-align:right">Monto ($)</th></tr></thead>
+          <tbody>
+            <tr><td style="padding:10px 14px"><strong>Ensilada (maquila)</strong></td>
+            <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${val}"
+              style="width:160px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+              onchange="gastosGridDraft['ensilada']=this.value"/></td></tr>
+          </tbody>
+        </table>
+      </div>`;
+
+  } else if(gastosTab === 'nomina') {
+    const rows = ACTIVIDADES.filter(a=>a!=='Sistema de riego').map((act,ai)=>{
+      const val = gastosGridDraft[`nom_${ai}`] || '';
+      return `<tr>
+        <td style="padding:8px 14px"><strong>${act}</strong></td>
+        <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${val}"
+          style="width:160px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+          onchange="gastosGridDraft['nom_${ai}']=this.value"/></td>
+      </tr>`;
+    }).join('');
+    tabContent = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;max-width:450px;margin-top:12px">
+        <thead><tr><th style="text-align:left;min-width:200px">Actividad</th><th style="text-align:right;min-width:160px">Monto ($)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+  } else if(gastosTab === 'camiones') {
+    const val = gastosGridDraft['camiones'] || '';
+    tabContent = `
+      <div style="padding:16px 0;max-width:400px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr><th style="text-align:left">Concepto</th><th style="text-align:right">Monto ($)</th></tr></thead>
+          <tbody>
+            <tr><td style="padding:10px 14px"><strong>Camiones de alquiler (Ensilada)</strong></td>
+            <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${val}"
+              style="width:160px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+              onchange="gastosGridDraft['camiones']=this.value"/></td></tr>
+          </tbody>
+        </table>
+      </div>`;
+
+  } else if(gastosTab === 'otros') {
+    const rows = CATS_SIMPLES.map((cat,ci)=>{
+      const val = gastosGridDraft[`otro_${ci}`] || '';
+      return `<tr>
+        <td style="padding:8px 14px"><strong>${cat}</strong></td>
+        <td style="padding:4px"><input type="number" min="0" step="1" placeholder="—" value="${val}"
+          style="width:160px;padding:5px 8px;text-align:right;border:1px solid #d4c0a0;font-size:13px"
+          onchange="gastosGridDraft['otro_${ci}']=this.value"/></td>
+      </tr>`;
+    }).join('');
+    tabContent = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;max-width:450px;margin-top:12px">
+        <thead><tr><th style="text-align:left;min-width:200px">Categoría</th><th style="text-align:right;min-width:160px">Monto ($)</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // Existing records
   const rows = S.gastosGenerales.map((g,i)=>{
     const cn = getGastoCosecha(g);
     const predNombres = (g.prediosIdx||[]).map(pi=>S.predios[pi]?.emoji+' '+S.predios[pi]?.nombre).join(', ');
-    const yearLabel = g.anio || '';
+    const actLabel = g.actividad ? ` · ${g.actividad}` : '';
+    const equipLabel = g.equipo ? ` · ${g.equipo}` : '';
     return `<tr>
-      <td><span style="font-family:'DM Mono',monospace;font-size:10px;background:#e8f5e8;color:var(--green);padding:2px 6px">C${cn} ${yearLabel}</span></td>
-      <td>${g.categoria}</td>
+      <td><span style="font-family:'DM Mono',monospace;font-size:10px;background:#e8f5e8;color:var(--green);padding:2px 6px">C${cn} ${g.anio||''}</span></td>
+      <td>${g.categoria}${actLabel}${equipLabel}</td>
       <td style="font-size:12px;color:var(--muted)">${predNombres}</td>
       <td class="mono tr amber">${fmt(g.monto)}</td>
       <td><button class="btn btn-d" onclick="delGasto(${i})">✕</button></td>
@@ -1794,70 +1970,89 @@ function renderGastos() {
 
   document.getElementById('gastos-content').innerHTML = `
     <div class="stats-row">
-      <div class="stat c1" style="padding:14px">
-        <div class="stat-lbl">🌾 Cosecha 1 (Dic-Feb)</div>
-        <div class="stat-val" style="font-size:20px">${fmt(resumen[1])}</div>
-        <div class="stat-unit">total gastos generales</div>
-      </div>
-      <div class="stat c2" style="padding:14px">
-        <div class="stat-lbl">🌽 Cosecha 2 (Mar-Jul)</div>
-        <div class="stat-val" style="font-size:20px">${fmt(resumen[2])}</div>
-        <div class="stat-unit">total gastos generales</div>
-      </div>
-      <div class="stat c3" style="padding:14px">
-        <div class="stat-lbl">🌿 Cosecha 3 (Ago-Nov)</div>
-        <div class="stat-val" style="font-size:20px">${fmt(resumen[3])}</div>
-        <div class="stat-unit">total gastos generales</div>
-      </div>
+      <div class="stat c1" style="padding:14px"><div class="stat-lbl">🌾 Cosecha 1</div><div class="stat-val" style="font-size:20px">${fmt(resumen[1])}</div><div class="stat-unit">gastos generales</div></div>
+      <div class="stat c2" style="padding:14px"><div class="stat-lbl">🌽 Cosecha 2</div><div class="stat-val" style="font-size:20px">${fmt(resumen[2])}</div><div class="stat-unit">gastos generales</div></div>
+      <div class="stat c3" style="padding:14px"><div class="stat-lbl">🌿 Cosecha 3</div><div class="stat-val" style="font-size:20px">${fmt(resumen[3])}</div><div class="stat-unit">gastos generales</div></div>
     </div>
 
     <div class="card">
-      <div class="card-head">💰 Grid — Gastos Generales por Cosecha</div>
-      <div style="margin-bottom:14px;padding:14px;background:var(--cream);border:1px solid var(--border)">
+      <div class="card-head">💰 Gastos Generales</div>
+      <div style="padding:14px;background:var(--cream);border:1px solid var(--border);margin-bottom:12px">
         <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
           <div>
-            <label style="display:block;margin-bottom:6px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Aplica a estos predios:</label>
+            <label style="display:block;margin-bottom:6px;font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Predios:</label>
             <div style="display:flex;gap:16px;flex-wrap:wrap">${predioChecks}</div>
           </div>
-          <div class="field" style="margin:0">
-            <label>Año</label>
-            <input type="number" id="g-anio" value="${curYear}" min="2020" max="2100" style="width:90px"/>
-          </div>
+          <div class="field" style="margin:0"><label>Año</label><input type="number" id="g-anio" value="${curYear}" min="2020" max="2100" style="width:90px"/></div>
           <div class="field" style="margin:0">
             <label>Cosecha</label>
-            <select id="g-cosecha" onchange="gastosGridCn=parseInt(this.value);gastosGridDraft={};renderGastos()">
-              ${[1,2,3].map(cn => {
-                const anyOpen = S.predios.some((p,pi)=>!getCosechaMeta(pi,cn).closed);
-                const label = cn===1?'C1 · Triticale · Dic-Feb':cn===2?'C2 · Maíz · Mar-Jul':'C3 · Maíz/Sorgo · Ago-Nov';
-                return `<option value="${cn}" ${gastosGridCn===cn?'selected':''} ${!anyOpen?'disabled':''}>
-                  ${label}${!anyOpen?' 🔒':''}
-                </option>`;
-              }).join('')}
-            </select>
+            <select id="g-cosecha" onchange="gastosGridCn=parseInt(this.value);gastosGridDraft={};renderGastos()">${cosechaOpts}</select>
           </div>
         </div>
       </div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;max-width:500px">
-          <thead><tr><th style="text-align:left;min-width:200px">Categoría</th><th style="text-align:right;min-width:160px">Monto ($)</th></tr></thead>
-          <tbody>${gridRows}</tbody>
-        </table>
-      </div>
-      <div class="btn-row" style="margin-top:16px">
-        <button class="btn btn-p" onclick="capturarGastos()">✅ Capturar gastos</button>
+      <div class="ctabs" style="margin-bottom:0">${tabsHtml}</div>
+      <div style="overflow-x:auto;padding:8px 0">${tabContent}</div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn btn-p" onclick="capturarGastos()">✅ Capturar</button>
         <button class="btn btn-s" onclick="gastosGridDraft={};renderGastos()">Limpiar</button>
-        <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted)">Solo llena las celdas que aplican · las vacías se ignoran · se prorratea por ha entre predios y tablas</span>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-head">📋 Gastos registrados <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">(${S.gastosGenerales.length} registros)</span></div>
+      <div class="card-head">📋 Gastos registrados <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted)">(${S.gastosGenerales.length})</span></div>
       ${rows ? `<div class="tbl-wrap"><table>
         <thead><tr><th>Cosecha</th><th>Categoría</th><th>Predios</th><th>Monto</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '<div class="empty"><div class="empty-icon">💰</div><div>Sin gastos registrados aún</div></div>'}
     </div>`;
 }
+
+function renderEquiposList() {
+  const out = [];
+  S.predios.forEach((p,pi)=>{
+    const equips = (S.equipos[pi]||[]).filter(e=>e.tipo!=='luz');
+    equips.forEach((eq,ei)=>{
+      out.push(`<span style="display:inline-flex;align-items:center;gap:6px;margin:3px;padding:3px 8px;background:#e8dcc8;font-size:11px">
+        ${p.emoji} ${eq.nombre}
+        <button onclick="delEquipo(${pi},${ei})" style="border:none;background:none;cursor:pointer;color:#7a1f1f;font-size:12px">✕</button>
+      </span>`);
+    });
+  });
+  return out.join('') || '<span style="font-size:11px;color:var(--muted)">Sin equipos configurados</span>';
+}
+
+function addEquipo() {
+  const pi = parseInt(document.getElementById('eq-predio').value);
+  const nombre = document.getElementById('eq-nombre').value.trim();
+  const tipo = document.getElementById('eq-tipo').value;
+  if(!nombre) { toast('⚠️ Ingresa el nombre del equipo',true); return; }
+  if(!S.equipos[pi]) S.equipos[pi] = [];
+  S.equipos[pi].push({id:uid(), nombre, tipo});
+  document.getElementById('eq-nombre').value = '';
+  save();
+  renderGastos();
+  toast('✓ Equipo agregado');
+}
+
+function addEquipoLuz() {
+  const pi = parseInt(document.getElementById('eq-predio-luz').value);
+  const nombre = document.getElementById('eq-nombre-luz').value.trim();
+  if(!nombre) { toast('⚠️ Ingresa el nombre del punto de luz',true); return; }
+  if(!S.equipos[pi]) S.equipos[pi] = [];
+  S.equipos[pi].push({id:uid(), nombre, tipo:'luz'});
+  document.getElementById('eq-nombre-luz').value = '';
+  save();
+  renderGastos();
+  toast('✓ Punto de luz agregado');
+}
+
+function delEquipo(pi, ei) {
+  const equips = S.equipos[pi].filter(e=>e.tipo!=='luz');
+  const eq = equips[ei];
+  S.equipos[pi] = S.equipos[pi].filter(e=>e.id!==eq.id);
+  save(); renderGastos(); toast('✓ Eliminado');
+}
+
 
 function updateGastosDraft(ci, cn, val) {
   if(!gastosGridDraft[ci]) gastosGridDraft[ci] = {};
@@ -1870,24 +2065,55 @@ function capturarGastos() {
   document.querySelectorAll('.gasto-predio-check:checked').forEach(cb=>prediosIdx.push(parseInt(cb.value)));
   if(!prediosIdx.length) { toast('⚠️ Selecciona al menos un predio',true); return; }
 
-  let total = 0;
-  if(!S.gastosGenerales) S.gastosGenerales = [];
-
   const cn = gastosGridCn || 1;
   const anyOpen = S.predios.some((p,pi)=>!getCosechaMeta(pi,cn).closed);
   if(!anyOpen) { toast('⚠️ Esta cosecha está cerrada',true); return; }
 
-  for(const [ciStr, cosechas] of Object.entries(gastosGridDraft)) {
-    const ci = parseInt(ciStr);
-    const categoria = CATS_GENERALES[ci];
-    const montoStr = cosechas[cn];
-    const monto = parseFloat(montoStr);
-    if(!monto || monto <= 0) continue;
-    S.gastosGenerales.push({ id:uid(), cosecha:cn, anio, categoria, monto, prediosIdx, fecha:today() });
-    total++;
+  if(!S.gastosGenerales) S.gastosGenerales = [];
+  let total = 0;
+
+  if(gastosTab === 'equipos') {
+    S.predios.forEach((p,pi)=>{
+      if(!prediosIdx.includes(pi)) return;
+      (S.equipos[pi]||[]).filter(e=>e.tipo==='tractor'||e.tipo==='noria').forEach(eq=>{
+        const diesel = parseFloat(gastosGridDraft[`d_${pi}_${eq.id}`]);
+        const rep    = parseFloat(gastosGridDraft[`r_${pi}_${eq.id}`]);
+        if(diesel>0) { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:'Diesel',equipo:eq.nombre,monto:diesel,prediosIdx:[pi],fecha:today()}); total++; }
+        if(rep>0)    { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:'Maquinaria',equipo:eq.nombre,monto:rep,prediosIdx:[pi],fecha:today()}); total++; }
+      });
+    });
+
+  } else if(gastosTab === 'luz') {
+    S.predios.forEach((p,pi)=>{
+      if(!prediosIdx.includes(pi)) return;
+      (S.equipos[pi]||[]).filter(e=>e.tipo==='luz').forEach(pt=>{
+        const monto = parseFloat(gastosGridDraft[`luz_${pi}_${pt.id}`]);
+        if(monto>0) { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:'Luz',equipo:pt.nombre,monto,prediosIdx:[pi],fecha:today()}); total++; }
+      });
+    });
+
+  } else if(gastosTab === 'ensilada') {
+    const monto = parseFloat(gastosGridDraft['ensilada']);
+    if(monto>0) { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:'Ensilada',monto,prediosIdx,fecha:today()}); total++; }
+
+  } else if(gastosTab === 'nomina') {
+    ACTIVIDADES.filter(a=>a!=='Sistema de riego').forEach((act,ai)=>{
+      const monto = parseFloat(gastosGridDraft[`nom_${ai}`]);
+      if(monto>0) { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:'Nómina y gastos admin',actividad:act,monto,prediosIdx,fecha:today()}); total++; }
+    });
+
+  } else if(gastosTab === 'camiones') {
+    const monto = parseFloat(gastosGridDraft['camiones']);
+    if(monto>0) { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:'Camiones',actividad:'Ensilada',monto,prediosIdx,fecha:today()}); total++; }
+
+  } else if(gastosTab === 'otros') {
+    CATS_SIMPLES.forEach((cat,ci)=>{
+      const monto = parseFloat(gastosGridDraft[`otro_${ci}`]);
+      if(monto>0) { S.gastosGenerales.push({id:uid(),cosecha:cn,anio,categoria:cat,monto,prediosIdx,fecha:today()}); total++; }
+    });
   }
 
-  if(!total) { toast('⚠️ No hay montos para capturar (o cosechas cerradas)',true); return; }
+  if(!total) { toast('⚠️ No hay montos para capturar',true); return; }
   gastosGridDraft = {};
   gastosGridPrediosIdx = prediosIdx;
   save();
